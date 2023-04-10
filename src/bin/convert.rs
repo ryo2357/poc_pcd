@@ -4,7 +4,7 @@ use std::io::{BufReader, BufWriter, Read, Write};
 
 fn main() {
     let input_path = "input/data_2023-03-17_084632.hex";
-    let output_path = "output/test_0407_1530.csv";
+    let output_path = "output/test_0410_1400.csv";
     let profile_num: usize = 3200;
     let profile_size: usize = 3200;
     let mut converter =
