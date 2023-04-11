@@ -1,9 +1,12 @@
+use dotenv::dotenv;
+use std::env;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 
 fn main() {
-    let input_path = "input/data_2023-03-17_084632.hex";
-    let output_path = "output/test_0410_1550.hex";
+    dotenv().ok();
+    let input_path = env::var("INPUT_PATH").unwrap();
+    let output_path = env::var("OUTPUT_PATH").unwrap();
 
     let mut converter = LJXFileConverterBuilder::new()
         .set_reader(input_path)
@@ -13,7 +16,7 @@ fn main() {
         .set_writer(output_path)
         .build()
         .unwrap();
-    match converter.execute() {
+    match converter.execute_csv() {
         Ok(_) => {
             println!("変換成功");
         }
@@ -37,12 +40,12 @@ impl LJXFileConverterBuilder {
     fn new() -> Self {
         LJXFileConverterBuilder::default()
     }
-    fn set_writer(mut self, output_path: &str) -> Self {
-        self.output_file_path = Some(output_path.to_string());
+    fn set_writer(mut self, output_path: String) -> Self {
+        self.output_file_path = Some(output_path);
         self
     }
-    fn set_reader(mut self, input_path: &str) -> Self {
-        self.input_file_path = Some(input_path.to_string());
+    fn set_reader(mut self, input_path: String) -> Self {
+        self.input_file_path = Some(input_path);
         self
     }
     fn set_parser(mut self, parser: RowDataToProfile) -> Self {
@@ -81,7 +84,7 @@ struct LJXDataFileConverter {
 impl LJXDataFileConverter {
     fn execute(&mut self) -> anyhow::Result<()> {
         // 先頭に追記の処理が難しいので後で手動で変更する
-        // self.writer.write_header(55555)?;
+        self.writer.write_header(55555)?;
 
         for _i in 0..self.profile_start {
             self.reader.skip_read()?;
@@ -92,7 +95,21 @@ impl LJXDataFileConverter {
             let pcd_profile = self.converter.make_points(profile);
 
             self.writer.write_points(pcd_profile)?;
-            // self.writer.write_points_as_csv(pcd_profile)?;
+        }
+        println!("ポイント点数{:?}", self.writer.get_point_count());
+
+        Ok(())
+    }
+
+    fn execute_csv(&mut self) -> anyhow::Result<()> {
+        for _i in 0..self.profile_start {
+            self.reader.skip_read()?;
+        }
+
+        for _i in 0..self.profile_take_num {
+            let profile = self.reader.read_profile()?;
+            let pcd_profile = self.converter.make_points(profile);
+            self.writer.write_points_as_csv(pcd_profile)?;
         }
         println!("ポイント点数{:?}", self.writer.get_point_count());
 
@@ -148,15 +165,35 @@ impl RowDataToProfile {
             take_num: take_num,
         })
     }
-    fn make_read_buf(&self) -> [u8; (3200 + 4) * 4] {
-        [0; (3200 + 4) * 4]
+    // 輝度データ無し
+    // fn make_read_buf(&self) -> [u8; (3200 + 4) * 4] {
+    //     [0; (3200 + 4) * 4]
+    // }
+    // fn parse(&mut self, buf: [u8; (3200 + 4) * 4]) -> anyhow::Result<LJXProfile> {
+    //     //バッファからi32への変換処理
+    //     let iter = buf.chunks(4).skip(4).skip(self.start).take(self.take_num);
+    //     let mut vec = Vec::<i32>::new();
+    //     for buf in iter {
+    //         vec.push(i32::from_le_bytes(buf.try_into()?));
+    //         // 単位は100nmとする 0.1μm
+    //     }
+
+    //     Ok(LJXProfile { inner: vec })
+    // }
+    // 輝度データ有り
+    fn make_read_buf(&self) -> [u8; (3200 + 3200 + 4) * 4] {
+        [0; (3200 + 3200 + 4) * 4]
     }
-    fn parse(&mut self, buf: [u8; (3200 + 4) * 4]) -> anyhow::Result<LJXProfile> {
+    fn parse(&mut self, buf: [u8; (3200 + 3200 + 4) * 4]) -> anyhow::Result<LJXProfile> {
         //バッファからi32への変換処理
         let iter = buf.chunks(4).skip(4).skip(self.start).take(self.take_num);
         let mut vec = Vec::<i32>::new();
-        for buf in iter {
+        for (i, buf) in iter.enumerate() {
+            if i == 3200 {
+                break;
+            }
             vec.push(i32::from_le_bytes(buf.try_into()?));
+            // 単位は100nmとする 0.1μm
         }
 
         Ok(LJXProfile { inner: vec })

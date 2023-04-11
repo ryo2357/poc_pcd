@@ -8,3 +8,4 @@ default-run = "extract_convert"
 
 [dependencies]
 anyhow = "1.0"
+dotenv = "0.15.0"
