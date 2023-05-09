@@ -1,8 +1,10 @@
+// Open3dならロードできるがPymeshlabではロードできない
+
 use dotenv::dotenv;
 use std::env;
 use std::fs;
 use std::fs::File;
-use std::io::{BufReader, BufWriter, Read, Write};
+use std::io::{BufReader, BufWriter, Read, Seek, SeekFrom, Write};
 
 fn main() {
     dotenv().ok();
@@ -17,7 +19,7 @@ fn main() {
         .set_writer(output_path)
         .build()
         .unwrap();
-    match converter.execute_csv() {
+    match converter.execute() {
         Ok(_) => {
             println!("変換成功");
         }
@@ -81,11 +83,12 @@ struct LJXDataFileConverter {
     converter: ProfileToPcd,
     profile_start: usize,
     profile_take_num: usize,
+    // プロファイル数の管理
 }
 impl LJXDataFileConverter {
     fn execute(&mut self) -> anyhow::Result<()> {
         // 先頭に追記の処理が難しいので後で手動で変更する
-        self.writer.write_header(55555)?;
+        self.writer.write_header(55)?;
 
         for _i in 0..self.profile_start {
             self.reader.skip_read()?;
@@ -99,20 +102,7 @@ impl LJXDataFileConverter {
         }
         println!("ポイント点数{:?}", self.writer.get_point_count());
 
-        Ok(())
-    }
-
-    fn execute_csv(&mut self) -> anyhow::Result<()> {
-        for _i in 0..self.profile_start {
-            self.reader.skip_read()?;
-        }
-
-        for _i in 0..self.profile_take_num {
-            let profile = self.reader.read_profile()?;
-            let pcd_profile = self.converter.make_points(profile);
-            self.writer.write_points_as_csv(pcd_profile)?;
-        }
-        println!("ポイント点数{:?}", self.writer.get_point_count());
+        self.writer.fix_header();
 
         Ok(())
     }
@@ -323,31 +313,30 @@ impl PcdStreamWriter {
     }
 
     fn write_header(&mut self, point_num: usize) -> anyhow::Result<()> {
-        // write_profileがすべて終わった後に実行したいが
-        // 先頭に追記するためにずらすのはそこそこ重たい処理
-        // ⇒　最初に追記する
-        let header:String = format!(
-            "# .PCD v.7 - Point Cloud Data file format\nVERSION .7\nFIELDS x y z\nSIZE 4 4 4\nTYPE I I I\nCOUNT 1 1 1\nWIDTH {}\nHEIGHT 1\nVIEWPOINT 0 0 0 1 0 0 0\nPOINTS {}\nDATA binary\n",
-            point_num,
-            point_num
-        );
+        let header = make_header(point_num);
         self.writer.write_all(header.as_bytes())?;
         Ok(())
     }
 
-    fn write_points_as_csv(&mut self, points: PcdProfilePoints) -> anyhow::Result<()> {
-        for pt in &points.inner {
-            match pt {
-                ProfilePoint::Failure => {
-                    continue;
-                }
-                ProfilePoint::Success(point) => {
-                    let point_string: String = format!("{},{},{}\n", point.x, point.y, point.z,);
-                    self.writer.write_all(point_string.as_bytes())?;
-                    self.point_count += 1;
-                }
-            }
-        }
+    fn fix_header(&mut self) -> anyhow::Result<()> {
+        let point_num = self.get_point_count();
+        let header = make_header(point_num);
+
+        self.writer.seek(SeekFrom::Start(0))?;
+        self.writer.write_all(header.as_bytes())?;
+        self.writer.flush()?;
+        self.writer.seek(SeekFrom::End(0))?;
         Ok(())
     }
+}
+
+fn make_header(point_num: usize) -> String {
+    let point_digits_size: usize = 20 - format!("{:}", point_num).to_string().len();
+    let adjust_comment = &"xxxxxxxxxxxxxxxxxxxx"[0..point_digits_size];
+    let header:String = format!(
+        "ply\nformat binary_little_endian 1.0\ncomment adjust str {}\nelement vertex {}\nproperty int x\nproperty int y\nproperty int z\nend_header\n",
+        adjust_comment,
+        point_num
+    );
+    header
 }
