@@ -2,7 +2,7 @@
 name = "poc_pcd"
 version = "0.1.0"
 edition = "2021"
-default-run = "extract_convert_to_double_plz"
+default-run = "extract_with_information"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
