@@ -2,7 +2,7 @@
 name = "poc_pcd"
 version = "0.1.0"
 edition = "2021"
-default-run = "extract_with_information"
+default-run = "extract_with_csv"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

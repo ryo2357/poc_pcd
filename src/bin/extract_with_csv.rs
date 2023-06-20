@@ -13,7 +13,9 @@ fn main() {
     let input_path = env::var("INPUT_PATH").unwrap();
     let output_path = env::var("OUTPUT_PATH").unwrap();
 
-    let profile_start_num = 70000;
+    // 168,000プロファイル　70,000
+    // 537,600,000点から160,000点を流出して描画⇒0.02％
+    let profile_start_num = 100_000;
     let profile_take_num = 400;
 
     let profile_range_start_num = 1700;
@@ -57,7 +59,28 @@ fn main() {
     writeln!(file, "profile_range_take_num:{:?}", profile_range_take_num).unwrap();
 
     // メッシュの作成
-    make_mash_file(output_path).unwrap();
+    make_mash_file(output_path.to_owned()).unwrap();
+
+    // csvの作成
+    let csv_file_path = String::new() + &output_path.replace(".ply", ".csv");
+
+    let mut converter = LJXFileConverterBuilder::new()
+        .set_reader(input_path.to_owned())
+        .set_profile_range(profile_start_num, profile_take_num)
+        .set_parser(RowDataToProfile::new(profile_range_start_num, profile_range_take_num).unwrap())
+        .set_converter(ProfileToPcd::new(250.0, 250.0))
+        .set_writer(csv_file_path)
+        .build()
+        .unwrap();
+    match converter.execute_csv() {
+        Ok(_) => {
+            println!("変換成功");
+        }
+        Err(err) => {
+            println!("変換失敗");
+            panic!("{:?}", err);
+        }
+    };
 }
 fn make_mash_file(input_path: String) -> anyhow::Result<()> {
     let python_path = env::var("PYTHON_PATH").unwrap();
@@ -156,6 +179,20 @@ impl LJXDataFileConverter {
         println!("ポイント点数{:?}", self.writer.get_point_count());
 
         self.writer.fix_header()?;
+
+        Ok(())
+    }
+    fn execute_csv(&mut self) -> anyhow::Result<()> {
+        for _i in 0..self.profile_start {
+            self.reader.skip_read()?;
+        }
+
+        for _i in 0..self.profile_take_num {
+            let profile = self.reader.read_profile()?;
+            let pcd_profile = self.converter.make_points(profile);
+            self.writer.write_points_as_csv(pcd_profile)?;
+        }
+        println!("ポイント点数{:?}", self.writer.get_point_count());
 
         Ok(())
     }
@@ -377,6 +414,23 @@ impl PcdStreamWriter {
         self.writer.write_all(header.as_bytes())?;
         self.writer.flush()?;
         self.writer.seek(SeekFrom::End(0))?;
+        Ok(())
+    }
+
+    // csv出力用の追加メソッド
+    fn write_points_as_csv(&mut self, points: PcdProfilePoints) -> anyhow::Result<()> {
+        for pt in &points.inner {
+            match pt {
+                ProfilePoint::Failure => {
+                    continue;
+                }
+                ProfilePoint::Success(point) => {
+                    let point_string: String = format!("{},{},{}\n", point.x, point.y, point.z,);
+                    self.writer.write_all(point_string.as_bytes())?;
+                    self.point_count += 1;
+                }
+            }
+        }
         Ok(())
     }
 }
